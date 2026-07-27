@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-contributing.dev/schema/0.1.json",
+  "title": "AGENTIC_CONTRIBUTING.md front matter",
+  "description": "Machine-readable contribution contract for automated contributors. Spec version 0.1.0.",
+  "type": "object",
+  "required": ["agentic_contributing", "autonomy", "verify"],
+  "additionalProperties": true,
+  "properties": {
+    "agentic_contributing": {
+      "description": "Spec version this file targets.",
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?$"
+    },
+    "autonomy": {
+      "description": "Maximum authority granted to an agent in this repository.",
+      "enum": ["advisory", "proposal", "supervised", "autonomous"]
+    },
+    "conformance": {
+      "description": "Conformance level the repository declares.",
+      "enum": ["core", "standard", "strict"],
+      "default": "standard"
+    },
+    "verify": {
+      "description": "Gate commands, executed in the order listed here.",
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "properties": {
+        "setup": { "type": "string" },
+        "build": { "type": "string" },
+        "lint": { "type": "string" },
+        "typecheck": { "type": "string" },
+        "test": { "type": "string" },
+        "test_scoped": {
+          "description": "Fast subset command. The token {paths} is substituted with changed paths.",
+          "type": "string"
+        },
+        "e2e": { "type": "string" },
+        "all": { "type": "string" }
+      },
+      "minProperties": 1
+    },
+    "baseline_required": {
+      "description": "Capture gate results on the base commit before making changes.",
+      "type": "boolean",
+      "default": true
+    },
+    "protected_paths": {
+      "description": "Globs an agent MUST NOT modify without explicit human authorization.",
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "generated_paths": {
+      "description": "Globs that are build output. Regenerate; never hand-edit.",
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "change_budget": {
+      "description": "Soft ceiling on change set size. Exceeding it triggers AC-STOP-4.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_files": { "type": "integer", "minimum": 1 },
+        "max_lines": { "type": "integer", "minimum": 1 },
+        "max_commits": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policy": { "enum": ["allow", "ask", "deny"], "default": "ask" },
+        "allowed_registries": { "type": "array", "items": { "type": "string" } },
+        "lockfile_command": { "type": "string" }
+      }
+    },
+    "network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "policy": { "enum": ["allow", "ask", "deny"], "default": "ask" },
+        "allowlist": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "commit": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "branch_pattern": {
+          "description": "Branch naming pattern. {slug} is substituted with a task slug.",
+          "type": "string"
+        },
+        "message_style": { "enum": ["conventional", "imperative", "free"] },
+        "trailers": { "type": "array", "items": { "type": "string" } },
+        "signoff": { "type": "boolean", "default": false }
+      }
+    },
+    "disclosure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "report_required": { "type": "boolean", "default": true },
+        "pr_label": { "type": "string" }
+      }
+    },
+    "overrides": {
+      "description": "Per-path relaxation or tightening. Most restrictive match governs a change set (AC-AUTO-3).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["paths"],
+        "additionalProperties": false,
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1
+          },
+          "autonomy": { "enum": ["advisory", "proposal", "supervised", "autonomous"] },
+          "conformance": { "enum": ["core", "standard", "strict"] },
+          "change_budget": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "max_files": { "type": "integer", "minimum": 1 },
+              "max_lines": { "type": "integer", "minimum": 1 },
+              "max_commits": { "type": "integer", "minimum": 1 }
+            }
+          },
+          "require_human_review": { "type": "boolean" }
+        }
+      }
+    },
+    "escalate_to": {
+      "description": "Where to route stop conditions: a channel, team, or person.",
+      "type": "string"
+    }
+  }
+}
