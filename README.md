@@ -15,6 +15,7 @@ neutral, human readable, CI checkable.
 
 - **[SPEC.md](SPEC.md)** — the normative specification (v0.1.0)
 - **[templates/AGENTIC_CONTRIBUTING.template.md](templates/AGENTIC_CONTRIBUTING.template.md)** — copy this into your repo
+- **[examples/](examples/)** — one worked example, end to end: a filled-in contract, and the PR an agent produced under it
 - **[schema/agentic-contributing-0.1.schema.json](schema/agentic-contributing-0.1.schema.json)** — front matter JSON Schema
 - **[tools/validate_agentic_contributing.py](tools/validate_agentic_contributing.py)** — reference validator
 - **[AGENTIC_CONTRIBUTING.md](AGENTIC_CONTRIBUTING.md)** — this repo's own, dogfooded
@@ -95,6 +96,11 @@ python3 validate_agentic_contributing.py --strict AGENTIC_CONTRIBUTING.md
 Filling it in takes about twenty minutes. Three of those minutes — the
 `## Known landmines` section — will save more agent-hours than the rest of the
 file combined.
+
+For a model to imitate rather than a form to fill, read
+[`examples/`](examples/): a complete contract for a fictional billing service,
+and the PR an agent produced under it — including the part it stopped on and
+why.
 
 Validate it in CI:
 

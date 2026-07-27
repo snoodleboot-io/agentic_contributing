@@ -283,6 +283,17 @@ class TestRepositoryFiles(unittest.TestCase):
         r = validate_text(path, path.read_text(encoding="utf-8"), strict=False)
         self.assertEqual(r.errors, [], f"{path} failed validation")
 
+    def test_worked_example_is_strict_valid(self):
+        """An example with unresolved placeholders is worse than no example."""
+        path = REPO_ROOT / "examples" / "AGENTIC_CONTRIBUTING.example.md"
+        r = validate_text(path, path.read_text(encoding="utf-8"), strict=True)
+        self.assertEqual(r.errors, [], f"{path} failed strict validation")
+
+    def test_worked_example_declares_strict_conformance(self):
+        path = REPO_ROOT / "examples" / "AGENTIC_CONTRIBUTING.example.md"
+        r = validate_text(path, path.read_text(encoding="utf-8"), strict=True)
+        self.assertEqual(r.level, "strict")
+
 
 if __name__ == "__main__":
     unittest.main()

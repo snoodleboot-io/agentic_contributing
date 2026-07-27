@@ -24,5 +24,8 @@ jobs:
       - name: Validate the template
         run: make check-template
 
+      - name: Validate the worked example (strict)
+        run: make check-examples
+
       - name: Test
         run: make test
