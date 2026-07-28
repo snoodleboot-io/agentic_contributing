@@ -1,5 +1,5 @@
 ---
-agentic_contributing: "0.1"
+agentic_contributing: "0.2"
 autonomy: supervised
 conformance: strict
 
@@ -67,7 +67,7 @@ on Postgres, publishing events to Kafka. Money moves through the code in
 `src/ledger/posting/`; treat that directory as if a mistake there is a
 customer-visible incident, because it is.
 
-This file follows [AGENTIC_CONTRIBUTING.md v0.1](https://github.com/snoodleboot-io/agentic_contributing).
+This file follows [AGENTIC_CONTRIBUTING.md v0.2](https://github.com/snoodleboot-io/agentic_contributing).
 Rule IDs below (`AC-*`) refer to that specification.
 
 Codebase layout, local setup, and command reference: [`AGENTS.md`](AGENTS.md).

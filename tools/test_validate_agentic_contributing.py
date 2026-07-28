@@ -6,6 +6,7 @@ a document that violates it. See AGENTIC_CONTRIBUTING.md, "Testing".
 
 from __future__ import annotations
 
+import tempfile
 import textwrap
 import unittest
 from pathlib import Path
@@ -268,6 +269,162 @@ class TestForwardCompatibility(unittest.TestCase):
     def test_unknown_top_level_keys_are_ignored(self):
         r = check(MINIMAL_FRONT_MATTER + "future_field:\n  nested: true\n")
         self.assertTrue(r.ok)
+
+
+class TestNestingGraph(unittest.TestCase):
+    """extends / children discoverability (§5.1). Every rule in both directions."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.addCleanup(self.tmp.cleanup)
+
+    def write(self, rel: str, front_matter: str) -> Path:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(doc(front_matter), encoding="utf-8")
+        return path
+
+    def validate(self, path: Path):
+        return validate_text(
+            path, path.read_text(encoding="utf-8"), strict=False, resolve_links=True
+        )
+
+    # --- extends ---
+
+    def test_resolving_extends_is_accepted(self):
+        self.write("AGENTIC_CONTRIBUTING.md", MINIMAL_FRONT_MATTER)
+        child = self.write(
+            "pkg/AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'extends: "../AGENTIC_CONTRIBUTING.md"\n',
+        )
+        self.assertEqual(self.validate(child).errors, [])
+
+    def test_dangling_extends_is_an_error(self):
+        child = self.write(
+            "pkg/AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'extends: "../nope/AGENTIC_CONTRIBUTING.md"\n',
+        )
+        r = self.validate(child)
+        self.assertIn("AC-FILE-8", rules(r.errors))
+
+    def test_extends_cycle_is_an_error(self):
+        a = self.write(
+            "a/AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'extends: "../b/AGENTIC_CONTRIBUTING.md"\n',
+        )
+        self.write(
+            "b/AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'extends: "../a/AGENTIC_CONTRIBUTING.md"\n',
+        )
+        r = self.validate(a)
+        self.assertTrue(any("cycle" in e for e in r.errors), r.errors)
+
+    def test_extends_must_be_a_string(self):
+        r = check(MINIMAL_FRONT_MATTER + "extends: [1, 2]\n")
+        self.assertIn("AC-FILE-6", rules(r.errors))
+
+    def test_listing_own_parent_as_a_child_is_an_error(self):
+        fm = (
+            MINIMAL_FRONT_MATTER
+            + 'extends: "../AGENTIC_CONTRIBUTING.md"\n'
+            + 'children: ["../AGENTIC_CONTRIBUTING.md"]\n'
+        )
+        self.assertIn("AC-FILE-8", rules(check(fm).errors))
+
+    # --- children ---
+
+    def test_resolving_children_are_accepted(self):
+        self.write(
+            "pkg/AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'extends: "../AGENTIC_CONTRIBUTING.md"\n',
+        )
+        root = self.write(
+            "AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'children: ["pkg/AGENTIC_CONTRIBUTING.md"]\n',
+        )
+        r = self.validate(root)
+        self.assertEqual(r.errors, [])
+        self.assertNotIn("AC-FILE-10", rules(r.warnings))
+
+    def test_dangling_child_is_an_error(self):
+        root = self.write(
+            "AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'children: ["ghost/AGENTIC_CONTRIBUTING.md"]\n',
+        )
+        self.assertIn("AC-FILE-8", rules(self.validate(root).errors))
+
+    def test_children_must_be_a_list_of_strings(self):
+        self.assertIn("AC-FILE-7", rules(check(MINIMAL_FRONT_MATTER + "children: 3\n").errors))
+
+    def test_transitive_grandchild_may_be_listed(self):
+        self.write(
+            "a/AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'extends: "../AGENTIC_CONTRIBUTING.md"\n',
+        )
+        self.write(
+            "a/b/AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'extends: "../AGENTIC_CONTRIBUTING.md"\n',
+        )
+        root = self.write(
+            "AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER
+            + 'children: ["a/AGENTIC_CONTRIBUTING.md", "a/b/AGENTIC_CONTRIBUTING.md"]\n',
+        )
+        r = self.validate(root)
+        self.assertEqual(r.errors, [])
+        self.assertNotIn("AC-FILE-7", rules(r.warnings))
+
+    # --- the anti-rot checks ---
+
+    def test_undeclared_nested_contract_warns(self):
+        self.write("pkg/AGENTIC_CONTRIBUTING.md", MINIMAL_FRONT_MATTER)
+        root = self.write("AGENTIC_CONTRIBUTING.md", MINIMAL_FRONT_MATTER)
+        r = self.validate(root)
+        self.assertIn("AC-FILE-7", rules(r.warnings))
+        self.assertTrue(any("pkg/AGENTIC_CONTRIBUTING.md" in w for w in r.warnings))
+
+    def test_declared_nested_contract_does_not_warn(self):
+        self.write(
+            "pkg/AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'extends: "../AGENTIC_CONTRIBUTING.md"\n',
+        )
+        root = self.write(
+            "AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'children: ["pkg/AGENTIC_CONTRIBUTING.md"]\n',
+        )
+        self.assertNotIn("AC-FILE-7", rules(self.validate(root).warnings))
+
+    def test_scan_prunes_vendor_directories(self):
+        self.write("node_modules/dep/AGENTIC_CONTRIBUTING.md", MINIMAL_FRONT_MATTER)
+        root = self.write("AGENTIC_CONTRIBUTING.md", MINIMAL_FRONT_MATTER)
+        self.assertNotIn("AC-FILE-7", rules(self.validate(root).warnings))
+
+    def test_non_reciprocal_child_warns(self):
+        self.write("pkg/AGENTIC_CONTRIBUTING.md", MINIMAL_FRONT_MATTER)  # no extends
+        root = self.write(
+            "AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'children: ["pkg/AGENTIC_CONTRIBUTING.md"]\n',
+        )
+        self.assertIn("AC-FILE-10", rules(self.validate(root).warnings))
+
+    def test_child_outside_the_subtree_warns(self):
+        self.write("outside/AGENTIC_CONTRIBUTING.md", MINIMAL_FRONT_MATTER)
+        root = self.write(
+            "inside/AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'children: ["../outside/AGENTIC_CONTRIBUTING.md"]\n',
+        )
+        self.assertIn("AC-FILE-7", rules(self.validate(root).warnings))
+
+    # --- opting out ---
+
+    def test_links_are_not_resolved_by_default(self):
+        path = self.write(
+            "pkg/AGENTIC_CONTRIBUTING.md",
+            MINIMAL_FRONT_MATTER + 'extends: "../nope/AGENTIC_CONTRIBUTING.md"\n',
+        )
+        r = validate_text(path, path.read_text(encoding="utf-8"), strict=False)
+        self.assertEqual(r.errors, [])
 
 
 class TestRepositoryFiles(unittest.TestCase):

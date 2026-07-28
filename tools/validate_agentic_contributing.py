@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Reference validator for AGENTIC_CONTRIBUTING.md (spec 0.1).
+"""Reference validator for AGENTIC_CONTRIBUTING.md (spec 0.2).
 
-Checks the machine-readable front matter and the required prose sections, and
-reports the conformance level the file actually achieves.
+Checks the machine-readable front matter, the required prose sections, and the
+nesting graph declared by `extends` / `children`, then reports the conformance
+level the file achieves.
 
 Usage:
-    validate_agentic_contributing.py [PATH ...] [--strict] [--quiet]
+    validate_agentic_contributing.py [PATH ...] [--strict] [--quiet] [--no-links]
 
 With no PATH, discovers AGENTIC_CONTRIBUTING.md at the repository root, then
 .github/, then docs/ (AC-FILE-2).
@@ -21,6 +22,7 @@ Requires PyYAML.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -34,9 +36,18 @@ except ImportError:  # pragma: no cover - environment dependent
     )
     raise SystemExit(2)
 
-SPEC_VERSION = "0.1"
+SPEC_VERSION = "0.2"
 FILENAME = "AGENTIC_CONTRIBUTING.md"
 SEARCH_DIRS = (".", ".github", "docs")
+
+# Pruned when scanning a subtree for undeclared nested contracts (AC-FILE-7).
+SKIP_DIRS = frozenset(
+    {
+        ".git", ".hg", ".svn", ".tox", ".venv", "venv", "node_modules",
+        "__pycache__", ".mypy_cache", ".ruff_cache", "dist", "build", "target",
+    }
+)
+MAX_EXTENDS_DEPTH = 32
 
 AUTONOMY_LEVELS = ("advisory", "proposal", "supervised", "autonomous")
 CONFORMANCE_LEVELS = ("core", "standard", "strict")
@@ -84,6 +95,11 @@ class Result:
     @property
     def ok(self) -> bool:
         return not self.errors
+
+
+def _norm(rel: str) -> str:
+    """Normalize a declared relative path for comparison, without touching disk."""
+    return os.path.normpath(rel.replace("\\", "/"))
 
 
 def _err(r: Result, rule: str, msg: str) -> None:
@@ -157,6 +173,18 @@ def validate_front_matter(r: Result, fm: dict) -> None:
         _err(r, "AC-AUTO-1", "missing required key `autonomy`")
     _check_enum(r, fm, "autonomy", AUTONOMY_LEVELS, "AC-AUTO-1")
     _check_enum(r, fm, "conformance", CONFORMANCE_LEVELS, "AC-FILE-1")
+
+    extends = fm.get("extends")
+    if extends is not None and (not isinstance(extends, str) or not extends.strip()):
+        _err(r, "AC-FILE-6", "`extends` must be a non-empty path string")
+    children = fm.get("children")
+    if children is not None and (
+        not isinstance(children, list) or not all(isinstance(c, str) and c for c in children)
+    ):
+        _err(r, "AC-FILE-7", "`children` must be a list of non-empty path strings")
+    if isinstance(children, list) and isinstance(extends, str):
+        if any(_norm(c) == _norm(extends) for c in children if isinstance(c, str)):
+            _err(r, "AC-FILE-8", "a file lists its own parent in `children`")
 
     if "verify" not in fm:
         _err(r, "AC-VERIFY-1", "missing required key `verify`")
@@ -248,7 +276,107 @@ def validate_sections(r: Result, body: str) -> None:
             _warn(r, "AC-FILE-1", f"recommended section `## {section.title()}` is absent")
 
 
-def validate_text(path: Path, text: str, strict: bool) -> Result:
+def read_front_matter(path: Path) -> dict | None:
+    """Parse another file's front matter. Returns None if unreadable or invalid."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = FRONT_MATTER_RE.match(text)
+    if not m:
+        return None
+    try:
+        fm = yaml.safe_load(m.group(1))
+    except yaml.YAMLError:
+        return None
+    return fm if isinstance(fm, dict) else None
+
+
+def _resolve(base: Path, rel: str) -> Path:
+    return (base / rel).resolve()
+
+
+def _extends_chain(start: Path) -> tuple[list[Path], bool]:
+    """Walk the `extends` chain upward. Returns (visited, cycle_detected)."""
+    seen: list[Path] = []
+    current = start.resolve()
+    for _ in range(MAX_EXTENDS_DEPTH):
+        seen.append(current)
+        fm = read_front_matter(current)
+        parent_rel = (fm or {}).get("extends")
+        if not isinstance(parent_rel, str) or not parent_rel:
+            return seen, False
+        parent = _resolve(current.parent, parent_rel)
+        if parent in seen:
+            return seen, True
+        if not parent.is_file():
+            return seen, False
+        current = parent
+    return seen, True
+
+
+def scan_nested(base: Path, exclude: Path) -> list[Path]:
+    """Find nested contract files beneath `base`, excluding `exclude` itself."""
+    found = []
+    for dirpath, dirnames, filenames in os.walk(base):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+        if FILENAME in filenames:
+            candidate = (Path(dirpath) / FILENAME).resolve()
+            if candidate != exclude:
+                found.append(candidate)
+    return sorted(found)
+
+
+def validate_links(r: Result, path: Path, fm: dict) -> None:
+    """Resolve the nesting graph declared by `extends` and `children` (§5.1)."""
+    here = path.resolve()
+    base = here.parent
+
+    extends = fm.get("extends")
+    if isinstance(extends, str) and extends.strip():
+        parent = _resolve(base, extends)
+        if not parent.is_file():
+            _err(r, "AC-FILE-8", f"`extends` does not resolve: {extends}")
+        else:
+            _, cycle = _extends_chain(here)
+            if cycle:
+                _err(r, "AC-FILE-8", "`extends` chain contains a cycle")
+
+    children = fm.get("children")
+    declared: set[Path] = set()
+    if isinstance(children, list):
+        for rel in (c for c in children if isinstance(c, str) and c):
+            child = _resolve(base, rel)
+            declared.add(child)
+            if not child.is_file():
+                _err(r, "AC-FILE-8", f"`children` entry does not resolve: {rel}")
+                continue
+            if base not in child.parents:
+                _warn(
+                    r,
+                    "AC-FILE-7",
+                    f"`children` entry is outside this file's subtree: {rel}",
+                )
+                continue
+            chain, _ = _extends_chain(child)
+            if here not in chain:
+                _warn(
+                    r,
+                    "AC-FILE-10",
+                    f"`children` entry {rel} does not point back here via `extends`",
+                )
+
+    for nested in scan_nested(base, exclude=here):
+        if nested not in declared:
+            _warn(
+                r,
+                "AC-FILE-7",
+                f"nested contract not listed in `children`: "
+                f"{nested.relative_to(base).as_posix()}",
+            )
+
+
+def validate_text(path: Path, text: str, strict: bool, resolve_links: bool = False) -> Result:
     r = Result(path=path)
 
     m = FRONT_MATTER_RE.match(text)
@@ -269,6 +397,8 @@ def validate_text(path: Path, text: str, strict: bool) -> Result:
         return r
 
     validate_front_matter(r, fm)
+    if resolve_links:
+        validate_links(r, path, fm)
 
     prose = strip_code(text[m.end():])
     validate_sections(r, prose)
@@ -299,6 +429,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("paths", nargs="*", type=Path, help="files to validate")
     p.add_argument("--strict", action="store_true", help="treat TODO markers as errors")
     p.add_argument("--quiet", action="store_true", help="only print problems")
+    p.add_argument(
+        "--no-links",
+        action="store_true",
+        help="skip filesystem resolution of the extends/children nesting graph",
+    )
     args = p.parse_args(argv)
 
     paths = list(args.paths)
@@ -319,7 +454,9 @@ def main(argv: list[str] | None = None) -> int:
             sys.stderr.write(f"error: cannot read {path}: {exc}\n")
             return 2
 
-        r = validate_text(path, text, strict=args.strict)
+        r = validate_text(
+            path, text, strict=args.strict, resolve_links=not args.no_links
+        )
         for e in r.errors:
             print(f"{path}: error: {e}")
         for w in r.warnings:

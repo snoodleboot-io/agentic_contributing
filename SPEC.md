@@ -1,6 +1,6 @@
 # AGENTIC_CONTRIBUTING.md — Specification
 
-**Version:** 0.1.0
+**Version:** 0.2.0
 **Status:** Draft
 **File name:** `AGENTIC_CONTRIBUTING.md`
 **Short name:** AC
@@ -126,6 +126,56 @@ knowingly, not by accident.
   an agent **SHOULD** apply the defaults in this specification at `proposal`
   autonomy.
 
+### 5.1 Discoverability of nested contracts
+
+`AC-FILE-3` makes nesting *resolvable* — given a file, an agent can walk up and
+find the contract that governs it. It does not make nesting *discoverable*: an
+agent reading the root contract has no way to know a stricter one exists three
+directories down until it happens to touch that directory. A maintainer reading
+the root has the same problem, which is how a nested contract quietly rots.
+
+The governance graph is therefore declared explicitly, in both directions.
+
+- `AC-FILE-6` — A nested file **MUST** declare `extends`: a path to the
+  contract in the nearest ancestor directory that also contains one. A file
+  with no ancestor contract **MUST NOT** declare `extends`.
+- `AC-FILE-7` — A file with nested contracts anywhere beneath it **SHOULD**
+  declare `children`: the path to every such contract in its subtree,
+  transitively. An agent reading one file can then enumerate the whole graph
+  without walking the tree.
+- `AC-FILE-8` — Every path in `extends` and `children` **MUST** resolve to an
+  existing file, and the graph **MUST NOT** contain a cycle. A link that does
+  not resolve is a validation error, not a warning: an unresolvable parent
+  means an agent cannot determine the rules it is operating under.
+- `AC-FILE-9` — Paths are interpreted relative to the directory of the file
+  declaring them, and **SHOULD** use forward slashes on all platforms.
+- `AC-FILE-10` — `children` and `extends` **SHOULD** be reciprocal: if A lists
+  B in `children`, B's `extends` chain should reach A. Non-reciprocal links
+  indicate a stale index and **SHOULD** be reported.
+
+```yaml
+# packages/billing/AGENTIC_CONTRIBUTING.md
+extends: "../../AGENTIC_CONTRIBUTING.md"
+```
+
+```yaml
+# AGENTIC_CONTRIBUTING.md  (repository root)
+children:
+  - "packages/billing/AGENTIC_CONTRIBUTING.md"
+  - "packages/billing/pipeline/AGENTIC_CONTRIBUTING.md"
+  - "services/ingest/AGENTIC_CONTRIBUTING.md"
+```
+
+Declaring these fields does not change how contracts combine — `AC-FILE-3`
+still governs that. They exist so the graph can be read, listed, and checked.
+
+**When to nest.** Nest where the *contract* genuinely diverges: a different
+owner, a different risk profile, different gates, or a materially different
+answer to "what may an agent do here." Do not nest because a directory is
+large. A subtree that would restate the parent with one line changed belongs in
+`overrides` (§6.1), not in a second file — every additional file is another
+thing that can drift out of sync with the code it governs.
+
 ---
 
 ## 6. File format
@@ -142,9 +192,13 @@ the disagreement is a bug in the file that agents **SHOULD** report.
 
 ```yaml
 ---
-agentic_contributing: "0.1"        # REQUIRED. Spec version this file targets.
+agentic_contributing: "0.2"        # REQUIRED. Spec version this file targets.
 autonomy: proposal                 # REQUIRED. See §6.2.
 conformance: standard              # OPTIONAL. core | standard | strict. Default: standard.
+
+extends: "../AGENTIC_CONTRIBUTING.md"   # REQUIRED iff an ancestor contract exists (§5.1).
+children:                          # SHOULD list every nested contract in this subtree.
+  - "packages/billing/AGENTIC_CONTRIBUTING.md"
 
 verify:                            # REQUIRED. Gate commands, run in this order.
   setup: "make install"            #   OPTIONAL. Environment preparation.
@@ -628,7 +682,10 @@ declared level and **SHOULD** exceed it.
 Two things are mechanically checkable and **SHOULD** be checked in CI:
 
 1. **The file itself** — front matter parses, required keys present, enums
-   valid, required sections present, declared gate commands exist.
+   valid, required sections present, declared gate commands exist, and every
+   `extends` / `children` link resolves with no cycle (§5.1). A repository-wide
+   scan that finds a nested contract absent from its ancestor's `children` is
+   the check that keeps the index from rotting.
 2. **The change set** — for `strict`, that agent-labeled PRs carry a
    well-formed report, that commits carry provenance trailers, and that no
    protected path was modified without an approval marker.
@@ -636,6 +693,8 @@ Two things are mechanically checkable and **SHOULD** be checked in CI:
 A reference validator for (1) is provided at
 [`tools/validate_agentic_contributing.py`](tools/validate_agentic_contributing.py),
 and the front matter schema at
+[`schema/agentic-contributing-0.2.schema.json`](schema/agentic-contributing-0.2.schema.json).
+Version 0.1 of the schema remains published, frozen, at
 [`schema/agentic-contributing-0.1.schema.json`](schema/agentic-contributing-0.1.schema.json).
 
 A useful CI heuristic for (2), complementing the rules above: flag any PR that

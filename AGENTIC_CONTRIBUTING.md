@@ -1,5 +1,5 @@
 ---
-agentic_contributing: "0.1"
+agentic_contributing: "0.2"
 autonomy: proposal
 conformance: strict
 
@@ -67,7 +67,7 @@ to it.
 4. **Every rule earns its place.** A rule that cannot be violated concretely,
    or whose violation a reviewer cannot recognize, is a slogan. Cut it.
 5. **Spec and template stay in sync.** A new front matter field means updating
-   `SPEC.md` §6.1, `schema/agentic-contributing-0.1.schema.json`,
+   `SPEC.md` §6.1, `schema/agentic-contributing-0.2.schema.json`,
    `tools/validate_agentic_contributing.py`, and
    `templates/AGENTIC_CONTRIBUTING.template.md` in the same change set. The
    validator's tests exist to catch you forgetting one.

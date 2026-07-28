@@ -1,7 +1,12 @@
 ---
-agentic_contributing: "0.1"
+agentic_contributing: "0.2"
 autonomy: proposal          # advisory | proposal | supervised | autonomous
 conformance: standard       # core | standard | strict
+
+# Nesting (§5.1). Delete both if this is the only contract in the repository.
+# extends: "../AGENTIC_CONTRIBUTING.md"      # required iff an ancestor contract exists
+# children:                                  # every nested contract beneath this one
+#   - "packages/billing/AGENTIC_CONTRIBUTING.md"
 
 verify:
   setup: "make install"
@@ -52,7 +57,7 @@ escalate_to: "TODO: team, channel, or person to contact"
 # Agentic contributing
 
 This file is the contract for automated contributors to this repository. It
-follows [AGENTIC_CONTRIBUTING.md v0.1](https://github.com/TODO/agentic-contributing).
+follows [AGENTIC_CONTRIBUTING.md v0.2](https://github.com/snoodleboot-io/agentic_contributing).
 Rule IDs below (`AC-*`) refer to that specification; the front matter above is
 authoritative for anything it can express.
 

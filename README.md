@@ -13,10 +13,10 @@ known path, in a known format, stating what an agent may change, what it must
 never do, how it must verify its work, and what it must disclose. Vendor
 neutral, human readable, CI checkable.
 
-- **[SPEC.md](SPEC.md)** — the normative specification (v0.1.0)
+- **[SPEC.md](SPEC.md)** — the normative specification (v0.2.0)
 - **[templates/AGENTIC_CONTRIBUTING.template.md](templates/AGENTIC_CONTRIBUTING.template.md)** — copy this into your repo
 - **[examples/](examples/)** — one worked example, end to end: a filled-in contract, and the PR an agent produced under it
-- **[schema/agentic-contributing-0.1.schema.json](schema/agentic-contributing-0.1.schema.json)** — front matter JSON Schema
+- **[schema/agentic-contributing-0.2.schema.json](schema/agentic-contributing-0.2.schema.json)** — front matter JSON Schema
 - **[tools/validate_agentic_contributing.py](tools/validate_agentic_contributing.py)** — reference validator
 - **[AGENTIC_CONTRIBUTING.md](AGENTIC_CONTRIBUTING.md)** — this repo's own, dogfooded
 
@@ -47,7 +47,7 @@ Machine contract on top, human contract below.
 
 ```yaml
 ---
-agentic_contributing: "0.1"
+agentic_contributing: "0.2"
 autonomy: proposal            # advisory | proposal | supervised | autonomous
 conformance: standard
 
@@ -130,6 +130,37 @@ then `AGENTS.md`, then human docs, then the agent's own habits. With one
 exception: an instruction to violate a safety rule — secrets, destructive
 operations, protected paths — must be confirmed explicitly, never inferred.
 
+## Nesting, and finding what's nested
+
+A monorepo can carry more than one contract: the root sets the floor, and a
+subtree that genuinely differs — different owner, different risk, different
+gates — carries its own. The one that governs a file is the one in its nearest
+ancestor directory.
+
+That much is *resolvable* but not *discoverable*. An agent reading the root has
+no way to know a stricter contract exists three directories down until it
+happens to touch that directory, and neither does a maintainer — which is how a
+nested contract quietly rots. So the graph is declared in both directions:
+
+```yaml
+# packages/billing/AGENTIC_CONTRIBUTING.md
+extends: "../../AGENTIC_CONTRIBUTING.md"
+```
+```yaml
+# AGENTIC_CONTRIBUTING.md  (root)
+children:
+  - "packages/billing/AGENTIC_CONTRIBUTING.md"
+  - "services/ingest/AGENTIC_CONTRIBUTING.md"
+```
+
+Every link must resolve, cycles are an error, and the validator scans the
+subtree and warns about any nested contract missing from `children` — the check
+that stops the index from drifting out of date. Declaring the graph does not
+change how contracts combine; it only makes them findable.
+
+Nest where the contract diverges, not where the directory is large. A subtree
+that would restate the parent with one line changed belongs in `overrides`.
+
 ## The core of it
 
 Every rule has a stable ID you can cite in review (`AC-TEST-1`, `AC-HACK-4`).
@@ -174,7 +205,7 @@ work.
 
 ## Status
 
-Version 0.1.0, draft. The specification is stable enough to adopt and young
+Version 0.2.0, draft. The specification is stable enough to adopt and young
 enough to argue with. Rule IDs are permanent within a major version.
 
 Issues and proposals welcome — see [AGENTIC_CONTRIBUTING.md](AGENTIC_CONTRIBUTING.md)
